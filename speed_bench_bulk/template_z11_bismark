@@ -1,0 +1,120 @@
+#!/bin/bash
+#SBATCH --job-name bism_QQQ
+#SBATCH -o slurm/bism_QQQ.log
+#SBATCH --ntasks=30
+#SBATCH --mem=512000
+#SBATCH --time=1-00:00:00
+
+set -euo pipefail
+
+WORKDIR=/path/to/working/directory
+# Useful paths
+DIRLOC=${WORKDIR}/align
+REFLOC=${WORKDIR}/refs/bismark
+FASTQS=${WORKDIR}/trim
+TOOLS=/path/to/installed_packages
+
+# TOOLS
+module load bbc2/bismark/bismark-0.24.0
+SAMTOOL=${TOOLS}/samtools_packages_v1.17/make_install_files/bin
+BEDTOOL=${TOOLS}/bedtools_2.30.0/bin
+TIMEDIR=${TOOLS}/time-1.9
+
+# FILES
+REF=${REFLOC}/z11
+FQ1=${FASTQS}/QQQ_val_1.fq.gz
+FQ2=${FASTQS}/QQQ_val_2.fq.gz
+OUT=${DIRLOC}/bism_QQQ
+MEM=bism_QQQ.track_mem.txt
+RAM=bism_QQQ.track_ram.txt
+TIM=bism_QQQ.gnu_time.tsv
+BAM=QQQ_val_1_bismark_bt2_pe.bam
+DUP=QQQ_val_1_bismark_bt2_pe.deduplicated.bam
+SRT=QQQ_val_1_bismark_bt2_pe.sorted.deduplicated.bam
+NRD=bism_QQQ.read_counts.txt
+
+# Use the same number of threads throughout
+NTHREADS=30
+
+# Use the same sleep time throughout
+SLEEP_TIME=10
+
+# Create analysis directory if it doesn't exist
+mkdir -p ${OUT}
+
+# Change to analysis directory
+cd ${OUT}
+
+# Track disk usage in the background
+nohup bash ${DIRLOC}/track_memory.sh ${OUT} ${SLEEP_TIME} > ${MEM} 2>&1 &
+nohup bash ${DIRLOC}/track_ram.sh ${SLEEP_TIME} > ${RAM} 2>&1 &
+pgrep -P $$
+
+# /usr/bin/time format string
+# part\tuser\tsystem\telapsed\tCPU\ttext\tdata\tmax\tinputs\toutputs\tmajor\tminor\tswaps
+
+# bismark align
+( ${TIMEDIR}/time \
+    --format="align\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    bismark \
+        --parallel 10 \
+        --output_dir ${OUT} \
+        --temp_dir ${OUT} \
+        --samtools_path ${SAMTOOL}/samtools \
+        --genome ${REF} \
+        -1 ${FQ1} \
+        -2 ${FQ2}
+)
+
+# bismark dedup
+( ${TIMEDIR}/time \
+    --format="dedup\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    deduplicate_bismark \
+        --output_dir ${OUT} \
+        ${BAM}
+)
+
+# bismark methylation extraction
+( ${TIMEDIR}/time \
+    --format="meth_extract\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    bismark_methylation_extractor \
+        --multicore 10 \
+        --bedGraph \
+        --gzip \
+        --output ${OUT} \
+        ${DUP}
+)
+
+# sort and index final bam
+( ${TIMEDIR}/time \
+    --format="sort\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${SAMTOOL}/samtools sort -@ "${NTHREADS}" -m 5G -o ${SRT} -O BAM ${DUP}
+)
+( ${TIMEDIR}/time \
+    --format="index\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${SAMTOOL}/samtools index -@ "${NTHREADS}" ${SRT}
+)
+
+sleep ${SLEEP_TIME}
+
+# Stop tracking memory
+pkill -P $$
+
+# Count the number of reads in the BAM
+echo -e "total_reads\t`${SAMTOOL}/samtools view -F 2304 ${BAM} | cut -f 1 | awk -F"_" '{ print $1 }' | sort -k1 -T ${OUT} | uniq | wc -l`" > ${NRD}
+echo -e "mapped_reads\t`${SAMTOOL}/samtools view -F 2308 ${BAM} | cut -f 1 | awk -F"_" '{ print $1 }' | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
+echo -e "good_mapped_reads\t`${SAMTOOL}/samtools view -F 2308 -q 40 ${BAM} | cut -f 1 | awk -F"_" '{ print $1 }' | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
+
+# Files to delete
+rm ${BAM} ${DUP} ${SRT} ${SRT}.bai
+rm *.deduplicated.txt.gz
+rm *_PE_report.txt *.M-bias.txt

@@ -1,0 +1,130 @@
+#!/bin/bash
+#SBATCH --job-name bwam_QQQ
+#SBATCH -o slurm/bwam_QQQ.log
+#SBATCH --ntasks=30
+#SBATCH --mem=512000
+#SBATCH --time=1-00:00:00
+
+set -euo pipefail
+
+WORKDIR=/path/to/working/directory
+
+# Useful paths
+DIRLOC=${WORKDIR}/align
+REFLOC=${WORKDIR}/refs/bwameth
+FASTQS=${WORKDIR}/trim
+TOOLS=/path/to/installed_packages
+
+# TOOLS
+source ~/start_anaconda.sh
+module load bbc2/picard/picard-2.27.5
+BWAMETH=${TOOLS}/bwa_meth_git # bwa-meth version 0.2.6
+SAMTOOL=${TOOLS}/samtools_packages_v1.17/make_install_files/bin
+METHYLD=${TOOLS}/MethylDackel-0.6.1
+BEDTOOL=${TOOLS}/bedtools_2.30.0/bin
+TIMEDIR=${TOOLS}/time-1.9
+
+# FILES
+REF=${REFLOC}/mm10/mm10_noContig.fa
+FQ1=${FASTQS}/QQQ_val_1.fq.gz
+FQ2=${FASTQS}/QQQ_val_2.fq.gz
+OUT=${DIRLOC}/bwam_QQQ
+MEM=bwam_QQQ.track_mem.txt
+RAM=bwam_QQQ.track_ram.txt
+TIM=bwam_QQQ.gnu_time.tsv
+UNS=bwam_QQQ.unsorted.bam
+SRT=bwam_QQQ.sorted.bam
+BAM=bwam_QQQ.sorted.markdup.bam
+PIC=bwam_QQQ.picard.metrics.txt
+NRD=bwam_QQQ.read_counts.txt
+
+# Use the same number of threads throughout
+NTHREADS=30
+
+# Use the same sleep time throughout
+SLEEP_TIME=10
+
+# Create analysis directory if it doesn't exist
+mkdir -p ${OUT}
+
+# Change to analysis directory
+cd ${OUT}
+
+# Track disk usage in the background
+nohup bash ${DIRLOC}/track_memory.sh ${OUT} ${SLEEP_TIME} > ${MEM} 2>&1 &
+nohup bash ${DIRLOC}/track_ram.sh ${SLEEP_TIME} > ${RAM} 2>&1 &
+pgrep -P $$
+
+# ${TIMEDIR}/time format string
+# part\tuser\tsystem\telapsed\tCPU\ttext\tdata\tmax\tinputs\toutputs\tmajor\tminor\tswaps
+
+# bwa-meth align
+( ${TIMEDIR}/time \
+    --format="align\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    ${BWAMETH}/bwameth.py --threads "${NTHREADS}" \
+        --reference ${REF} \
+        ${FQ1} \
+        ${FQ2} | \
+    samtools view -o ${UNS} -O BAM -
+)
+
+# samtools sort
+( ${TIMEDIR}/time \
+    --format="sort\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    samtools sort -@ "${NTHREADS}" -m 5G -o ${SRT} -O BAM ${UNS}
+)
+
+# samtools index
+( ${TIMEDIR}/time \
+    --format="index1\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    samtools index -@ "${NTHREADS}" ${SRT}
+)
+
+# picard MarkDuplicates
+( ${TIMEDIR}/time \
+    --format="markdup\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    java -Xms8g -Xmx100g -Djava.io.tmpdir=${OUT} -jar $PICARD MarkDuplicates \
+        I=${SRT} \
+        O=${BAM} \
+        M=${PIC} \
+        REMOVE_DUPLICATES=false \
+        ASSUME_SORTED=true
+)
+
+# samtools index (again)
+( ${TIMEDIR}/time \
+    --format="index2\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    samtools index -@ "${NTHREADS}" ${BAM}
+)
+
+# MethylDackel
+( ${TIMEDIR}/time \
+    --format="methyldackel\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${METHYLD}/MethylDackel extract -@ "${NTHREADS}" \
+        ${REF} \
+        ${BAM}
+)
+
+sleep ${SLEEP_TIME}
+
+# Stop tracking memory
+pkill -P $$
+
+# Count the number of reads in the BAM
+echo -e "total_reads\t`${SAMTOOL}/samtools view -F 2304 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" > ${NRD}
+echo -e "mapped_reads\t`${SAMTOOL}/samtools view -F 2308 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
+echo -e "good_mapped_reads\t`${SAMTOOL}/samtools view -F 2308 -q 40 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
+
+# Files to remove
+rm ${UNS} ${SRT} ${SRT}.bai ${BAM} ${BAM}.bai

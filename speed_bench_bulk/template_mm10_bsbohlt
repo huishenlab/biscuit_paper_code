@@ -1,0 +1,115 @@
+#!/bin/bash
+#SBATCH --job-name bolt_QQQ
+#SBATCH -o slurm/bolt_QQQ.log
+#SBATCH --ntasks=30
+#SBATCH --mem=512000
+#SBATCH --time=1-00:00:00
+
+set -euo pipefail
+
+WORKDIR=/path/to/working/directory
+
+# Useful paths
+DIRLOC=${WORKDIR}/align
+REFLOC=${WORKDIR}/refs/bsbolt
+FASTQS=${WORKDIR}/trim
+TOOLS=/path/to/installed_packages
+
+# TOOLS
+BSBOHLT=${TOOLS}/miniconda3/bin
+SAMTOOL=${TOOLS}/samtools_packages_v1.17/make_install_files/bin
+BEDTOOL=${TOOLS}/bedtools_2.30.0/bin
+TIMEDIR=${TOOLS}/time-1.9
+
+# FILES
+REF=${REFLOC}/mm10
+FQ1=${FASTQS}/QQQ_val_1.fq.gz
+FQ2=${FASTQS}/QQQ_val_2.fq.gz
+OUT=${DIRLOC}/bolt_QQQ
+MEM=bolt_QQQ.track_mem.txt
+RAM=bolt_QQQ.track_ram.txt
+TIM=bolt_QQQ.gnu_time.tsv
+BAS=bolt_QQQ
+UNS=bolt_QQQ.unsorted
+FIX=bolt_QQQ.unsorted.fixmates
+SRT=bolt_QQQ.unsorted
+BAM=bolt_QQQ.sorted.markdup.bam
+NRD=bolt_QQQ.read_counts.txt
+
+# Use the same number of threads throughout
+NTHREADS=30
+
+# Use the same sleep time throughout
+SLEEP_TIME=10
+
+# Create analysis directory if it doesn't exist
+mkdir -p ${OUT}
+
+# Change to analysis directory
+cd ${OUT}
+
+# Track disk usage in the background
+nohup bash ${DIRLOC}/track_memory.sh ${OUT} ${SLEEP_TIME} > ${MEM} 2>&1 &
+nohup bash ${DIRLOC}/track_ram.sh ${SLEEP_TIME} > ${RAM} 2>&1 &
+pgrep -P $$
+
+# /usr/bin/time format string
+# part\tuser\tsystem\telapsed\tCPU\ttext\tdata\tmax\tinputs\toutputs\tmajor\tminor\tswaps
+
+# bsbolt align
+( ${TIMEDIR}/time \
+    --format="align\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    ${BSBOHLT}/bsbolt Align -t "${NTHREADS}" -DB ${REF} -F1 ${FQ1} -F2 ${FQ2} -O ${UNS}
+)
+
+# fixmates to prepare for duplicate removal, use -p to disable proper pair check
+( ${TIMEDIR}/time \
+    --format="fixmate\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${SAMTOOL}/samtools fixmate -p -m ${UNS}.bam ${FIX}.bam
+)
+
+# sort bam by coordinates for duplicate calling
+( ${TIMEDIR}/time \
+    --format="sort\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${SAMTOOL}/samtools sort -@ "${NTHREADS}" -o ${SRT}.bam ${FIX}.bam
+)
+
+# remove duplicate reads
+( ${TIMEDIR}/time \
+    --format="markdup\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${SAMTOOL}/samtools markdup ${SRT}.bam ${BAM}
+)
+
+# index bam file for methylation calling
+( ${TIMEDIR}/time \
+    --format="index\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${SAMTOOL}/samtools index -@ "${NTHREADS}" ${BAM}
+)
+
+( ${TIMEDIR}/time \
+    --format="meth_call\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${BSBOHLT}/bsbolt CallMethylation -I ${BAM} -DB ${REF} -O ${BAS} -BG -CG -t "${NTHREADS}"
+)
+
+sleep ${SLEEP_TIME}
+
+# Stop tracking memory
+pkill -P $$
+
+# Count the number of reads in the BAM
+echo -e "total_reads\t`${SAMTOOL}/samtools view -F 2304 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" > ${NRD}
+echo -e "mapped_reads\t`${SAMTOOL}/samtools view -F 2308 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
+echo -e "good_mapped_reads\t`${SAMTOOL}/samtools view -F 2308 -q 40 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
+
+rm *.bam *.bai
