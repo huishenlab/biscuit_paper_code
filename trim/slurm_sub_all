@@ -1,0 +1,39 @@
+#!/bin/bash
+#SBATCH --job-name trim
+#SBATCH -o QQQ.log
+#SBATCH --ntasks=2
+#SBATCH --mem=200000
+#SBATCH --time=72:00:00
+
+set -euo pipefail
+
+# Useful paths
+WORKDIR=/path/to/working/directory
+DIRLOC="${WORKDIR}/trim"
+FASTQS="${WORKDIR}/data"
+TOOLS=/path/to/installed_packages
+
+# Change to trim directory
+cd ${DIRLOC}
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe1.fq.gz 1000000 | gzip > QQQ_001M_val_1.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe2.fq.gz 1000000 | gzip > QQQ_001M_val_2.fq.gz
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe1.fq.gz 5000000 | gzip > QQQ_005M_val_1.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe2.fq.gz 5000000 | gzip > QQQ_005M_val_2.fq.gz
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe1.fq.gz 10000000 | gzip > QQQ_010M_val_1.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe2.fq.gz 10000000 | gzip > QQQ_010M_val_2.fq.gz
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe1.fq.gz 25000000 | gzip > QQQ_025M_val_1.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe2.fq.gz 25000000 | gzip > QQQ_025M_val_2.fq.gz
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe1.fq.gz 50000000 | gzip > QQQ_050M_val_1.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe2.fq.gz 50000000 | gzip > QQQ_050M_val_2.fq.gz
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe1.fq.gz 100000000 | gzip > QQQ_100M_val_1.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe2.fq.gz 100000000 | gzip > QQQ_100M_val_2.fq.gz
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe1.fq.gz 250000000 | gzip > QQQ_250M_val_1.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ.pe2.fq.gz 250000000 | gzip > QQQ_250M_val_2.fq.gz
+

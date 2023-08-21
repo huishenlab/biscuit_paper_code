@@ -1,0 +1,88 @@
+#!/bin/bash
+#SBATCH --job-name trim
+#SBATCH -o QQQ.log
+#SBATCH --ntasks=16
+#SBATCH --mem=200000
+#SBATCH --time=72:00:00
+
+set -euo pipefail
+
+# Useful paths
+WORKDIR=/path/to/working/directory
+DIRLOC="${WORKDIR}/trim"
+FASTQS="${WORKDIR}/data"
+TOOLS=/path/to/installed_packages
+
+# Change to trim directory
+cd ${DIRLOC}
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ_1.fastq.gz 1000000 | gzip > QQQ_1.tmp.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ_2.fastq.gz 1000000 | gzip > QQQ_2.tmp.fq.gz
+
+${TOOLS}/trim_galore \
+    --no_report_file \
+    --basename QQQ_001M \
+    --cores 4 \
+    --paired \
+    QQQ_1.tmp.fq.gz \
+    QQQ_2.tmp.fq.gz
+
+rm -f QQQ_1.tmp.fq.gz
+rm -f QQQ_2.tmp.fq.gz
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ_1.fastq.gz 5000000 | gzip > QQQ_1.tmp.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ_2.fastq.gz 5000000 | gzip > QQQ_2.tmp.fq.gz
+
+${TOOLS}/trim_galore \
+    --no_report_file \
+    --basename QQQ_005M \
+    --cores 4 \
+    --paired \
+    QQQ_1.tmp.fq.gz \
+    QQQ_2.tmp.fq.gz
+
+rm -f QQQ_1.tmp.fq.gz
+rm -f QQQ_2.tmp.fq.gz
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ_1.fastq.gz 10000000 | gzip > QQQ_1.tmp.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ_2.fastq.gz 10000000 | gzip > QQQ_2.tmp.fq.gz
+
+${TOOLS}/trim_galore \
+    --no_report_file \
+    --basename QQQ_010M \
+    --cores 4 \
+    --paired \
+    QQQ_1.tmp.fq.gz \
+    QQQ_2.tmp.fq.gz
+
+rm -f QQQ_1.tmp.fq.gz
+rm -f QQQ_2.tmp.fq.gz
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ_1.fastq.gz 25000000 | gzip > QQQ_1.tmp.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ_2.fastq.gz 25000000 | gzip > QQQ_2.tmp.fq.gz
+
+${TOOLS}/trim_galore \
+    --no_report_file \
+    --basename QQQ_025M \
+    --cores 4 \
+    --paired \
+    QQQ_1.tmp.fq.gz \
+    QQQ_2.tmp.fq.gz
+
+rm -f QQQ_1.tmp.fq.gz
+rm -f QQQ_2.tmp.fq.gz
+
+${TOOLS}/seqtk sample ${FASTQS}/QQQ_1.fastq.gz 50000000 | gzip > QQQ_1.tmp.fq.gz
+${TOOLS}/seqtk sample ${FASTQS}/QQQ_2.fastq.gz 50000000 | gzip > QQQ_2.tmp.fq.gz
+
+${TOOLS}/trim_galore \
+    --no_report_file \
+    --basename QQQ_050M \
+    --cores 4 \
+    --paired \
+    QQQ_1.tmp.fq.gz \
+    QQQ_2.tmp.fq.gz
+
+rm -f QQQ_1.tmp.fq.gz
+rm -f QQQ_2.tmp.fq.gz
+
