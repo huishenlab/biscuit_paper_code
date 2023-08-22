@@ -18,7 +18,7 @@ FASTQS=${WORKDIR}/trim
 TOOLS=/path/to/installed_packages
 
 # TOOLS
-GEMBEES=${TOOLS}/gemBS_rs_git
+GEMBEES=${TOOLS}/gemBS_rs_git # gemBS version 4.0.4
 SAMTOOL=${TOOLS}/samtools_packages_v1.17/make_install_files/bin
 BEDTOOL=${TOOLS}/bedtools_2.30.0/bin
 TIMEDIR=${TOOLS}/time-1.9
