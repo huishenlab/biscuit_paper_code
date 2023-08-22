@@ -1,0 +1,58 @@
+#!/bin/bash
+#SBATCH --job-name filter_vcfs
+#SBATCH -o generate_filtered_vcfs.log
+#SBATCH --ntasks=2
+#SBATCH --mem=50000
+#SBATCH --time=12:00:00
+
+# Create directory location variable
+WORKDIR=/path/to/working/directory
+DIRLOC=${WORKDIR}/snv_validation/overlaps/wgbs_overlaps
+
+VCF=${DIRLOC}/full_vcf_overlap/0002.vcf.gz
+
+cd ${DIRLOC}
+
+bash apply_qual_genotype_chrom_filters.sh \
+    -v ${VCF} \
+    -o filtered_vcfs/removed_base_only
+
+bash apply_qual_genotype_chrom_filters.sh \
+    -v ${VCF} \
+    -f \
+    -o filtered_vcfs/removed_lowqual_only
+
+bash apply_qual_genotype_chrom_filters.sh \
+    -v ${VCF} \
+    -g \
+    -o filtered_vcfs/removed_genotype_only
+
+bash apply_qual_genotype_chrom_filters.sh \
+    -v ${VCF} \
+    -c \
+    -o filtered_vcfs/removed_chromosome_only
+
+bash apply_qual_genotype_chrom_filters.sh \
+    -v ${VCF} \
+    -f -g \
+    -o filtered_vcfs/removed_lowqual_genotype
+
+bash apply_qual_genotype_chrom_filters.sh \
+    -v ${VCF} \
+    -f -c \
+    -o filtered_vcfs/removed_lowqual_chromosome
+
+bash apply_qual_genotype_chrom_filters.sh \
+    -v ${VCF} \
+    -g -c \
+    -o filtered_vcfs/removed_genotype_chromosome
+
+bash apply_qual_genotype_chrom_filters.sh \
+    -v ${VCF} \
+    -f -g -c \
+    -o filtered_vcfs/removed_lowqual_genotype_chromosome
+
+bash apply_qual_genotype_chrom_filters.sh \
+    -v ${VCF} \
+    -b \
+    -o filtered_vcfs/applied_biscuit_and_gatk_filters
