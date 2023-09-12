@@ -26,6 +26,7 @@ FQ2=QQQ_2.fastq.gz
 OUT=${DIRLOC}/gemb_QQQ
 TIM=gemb_QQQ.gnu_time.tsv
 BAM=gemb_QQQ.bam
+BCF=gemb_QQQ.bcf
 CON=${DIRLOC}/smallwood_gembs_mm10.conf
 TEM=${DIRLOC}/config_gembs_sample.template
 SAP=${OUT}/config_gembs_QQQ.conf
@@ -80,7 +81,7 @@ echo -e "total_reads\t`${SAMTOOL}/samtools view -F 2304 ${BAM} | cut -f 1 | sort
 echo -e "mapped_reads\t`${SAMTOOL}/samtools view -F 2308 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
 echo -e "good_mapped_reads\t`${SAMTOOL}/samtools view -F 2308 -q 40 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
 
-rm ${BAM} *.csi
+rm ${BAM} ${BCF} *.csi
 rm *_chh.*
 rm *_chg.*
 rm *.md5 *.bw *.json *.bb
