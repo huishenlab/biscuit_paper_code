@@ -1,0 +1,102 @@
+#!/bin/bash
+#SBATCH --job-name bisc_QQQ
+#SBATCH -o slurm/bisc_QQQ.log
+#SBATCH --ntasks=30
+#SBATCH --mem=150000
+#SBATCH --time=2-00:00:00
+
+set -euo pipefail
+
+WORKDIR=/path/to/working/directory
+
+# Useful paths
+DIRLOC=${WORKDIR}/snmc_seq2
+REFLOC=${WORKDIR}/refs/biscuit
+FASTQS=${WORKDIR}/snmc_seq2_data
+TOOLS=/path/to/installed_packages
+
+# TOOLS
+BISCUIT=${TOOLS}/biscuit-release-1.2.1.20230601
+SAMTOOL=${TOOLS}/samtools_packages_v1.17/make_install_files/bin
+DUPSIFT=${TOOLS}/dupsifter-1.1.1.20230615
+BEDTOOL=${TOOLS}/bedtools_2.30.0/bin
+TIMEDIR=${TOOLS}/time-1.9
+
+# FILES
+REF=${REFLOC}/mm10/mm10_noContig.fa
+FQ1=${FASTQS}/QQQ_trimmed_R1.fastq.gz
+FQ2=${FASTQS}/QQQ_trimmed_R2.fastq.gz
+OUT=${DIRLOC}/bisc_QQQ
+TIM=bisc_QQQ.gnu_time.tsv
+BAM=bisc_QQQ.sorted.markdup.bam
+VCF=bisc_QQQ.pileup.vcf
+BED=bisc_QQQ.bed
+NRD=bisc_QQQ.read_counts.txt
+
+# Use the same number of threads throughout
+NTHREADS=30
+
+# Create analysis directory if it doesn't exist
+mkdir -p ${OUT}
+
+# Change to analysis directory
+cd ${OUT}
+
+# /usr/bin/time format string
+# part\tuser\tsystem\telapsed\tCPU\ttext\tdata\tmax\tinputs\toutputs\tmajor\tminor\tswaps
+
+# biscuit align, dupsifter mark dups, samtools sort
+( ${TIMEDIR}/time \
+    --format="align\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    ${BISCUIT}/biscuit align -@ "${NTHREADS}" ${REF} ${FQ1} ${FQ2} | \
+    ${DUPSIFT}/dupsifter ${REF} | \
+    ${SAMTOOL}/samtools sort -@ "${NTHREADS}" -m 5G -o ${BAM} -O BAM -
+)
+
+# samtools index
+( ${TIMEDIR}/time \
+    --format="index\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${SAMTOOL}/samtools index -@ "${NTHREADS}" ${BAM}
+)
+
+# biscuit pileup
+( ${TIMEDIR}/time \
+    --format="pileup\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${BISCUIT}/biscuit pileup -@ "${NTHREADS}" -o ${VCF} ${REF} ${BAM}
+)
+
+( ${TIMEDIR}/time \
+    --format="bgzip\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${SAMTOOL}/bgzip -@ "${NTHREADS}" ${VCF}
+)
+
+( ${TIMEDIR}/time \
+    --format="tabix\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${SAMTOOL}/tabix -p vcf ${VCF}.gz
+)
+
+# biscuit vcf2bed
+( ${TIMEDIR}/time \
+    --format="vcf2bed\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${BISCUIT}/biscuit vcf2bed -k 1 ${VCF}.gz | gzip > ${BED}.gz
+)
+
+# Count the number of reads in the BAM
+echo -e "total_reads\t`${SAMTOOL}/samtools view -F 2304 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" > ${NRD}
+echo -e "mapped_reads\t`${SAMTOOL}/samtools view -F 2308 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
+echo -e "good_mapped_reads\t`${SAMTOOL}/samtools view -F 2308 -q 40 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
+
+# Files to delete
+rm ${BAM} ${BAM}.bai
+rm ${VCF}.gz ${VCF}.gz.tbi ${VCF}_meth_average.tsv

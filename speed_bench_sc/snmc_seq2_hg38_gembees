@@ -1,0 +1,88 @@
+#!/bin/bash
+#SBATCH --job-name gemb_QQQ
+#SBATCH -o slurm/gemb_QQQ.log
+#SBATCH --ntasks=30
+#SBATCH --mem=150000
+#SBATCH --time=2-00:00:00
+
+set -euo pipefail
+
+WORKDIR=/path/to/working/directory
+
+# Useful paths
+DIRLOC=${WORKDIR}/snmc_seq2
+TOOLS=/path/to/installed_packages
+
+# TOOLS
+GEMBEES=${TOOLS}/gemBS_rs_git
+SAMTOOL=${TOOLS}/samtools_packages_v1.17/make_install_files/bin
+BEDTOOL=${TOOLS}/bedtools_2.30.0/bin
+TIMEDIR=${TOOLS}/time-1.9
+
+# FILES
+
+FQ1=QQQ_trimmed_R1.fastq.gz
+FQ2=QQQ_trimmed_R2.fastq.gz
+OUT=${DIRLOC}/gemb_QQQ
+TIM=gemb_QQQ.gnu_time.tsv
+BAM=gemb_QQQ.bam
+BCF=gemb_QQQ.bcf
+CON=${DIRLOC}/snmc_seq2_gembs_hg38.conf
+TEM=${DIRLOC}/config_gembs_sample.template
+SAP=${OUT}/config_gembs_QQQ.conf
+NAM=QQQ
+NRD=gemb_QQQ.read_counts.txt
+
+# Use the same number of threads throughout
+NTHREADS=30
+
+# Create analysis directory if it doesn't exist
+mkdir -p ${OUT}
+
+# Change to analysis directory
+cd ${OUT}
+
+# Setup sample config file
+sed "s/111/${FQ1}/g; s/222/${FQ2}/g; s/NOM/${NAM}/g" ${TEM} > ${SAP}
+
+# /usr/bin/time format string
+# part\tuser\tsystem\telapsed\tCPU\ttext\tdata\tmax\tinputs\toutputs\tmajor\tminor\tswaps
+
+( ${TIMEDIR}/time \
+    --format="prepare\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    ${GEMBEES}/gemBS prepare -c ${CON} -t ${SAP}
+)
+
+( ${TIMEDIR}/time \
+    --format="align\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${GEMBEES}/gemBS map --read-non-stranded --tmp-dir ${OUT}
+)
+
+( ${TIMEDIR}/time \
+    --format="call\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${GEMBEES}/gemBS call --tmp-dir ${OUT}
+)
+
+( ${TIMEDIR}/time \
+    --format="extract\t%U\t%S\t%e\t%P\t%X\t%D\t%M\t%I\t%O\t%F\t%R\t%W" \
+    --output=${TIM} \
+    --append \
+    ${GEMBEES}/gemBS extract
+)
+
+
+# Count the number of reads in the BAM
+echo -e "total_reads\t`${SAMTOOL}/samtools view -F 2304 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" > ${NRD}
+echo -e "mapped_reads\t`${SAMTOOL}/samtools view -F 2308 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
+echo -e "good_mapped_reads\t`${SAMTOOL}/samtools view -F 2308 -q 40 ${BAM} | cut -f 1 | sort -k1 -T ${OUT} | uniq | wc -l`" >> ${NRD}
+
+rm ${BAM} ${BCF} *.csi
+rm *_chh.*
+rm *_chg.*
+rm *.md5 *.bw *.json *.bb
+rm *_cpg.txt.gz*
